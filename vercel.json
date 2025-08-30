@@ -1,7 +1,7 @@
 {
   "functions": {
-    "server.js": {
-      "runtime": "vercel-node@20"
+    "app.js": {
+      "runtime": "vercel-node@5.3.17"
     }
   },
   "rewrites": [
