@@ -1,13 +1,26 @@
-import express from 'express';
+import express from "express";
+
+// CONFIGS
+import "dotenv/config";
+import "./config/firebase.js";
+
+// ROUTES
+import authRoutes from "./routes/authRoutes.js";
+import imageRoutes from './routes/imageRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => {
-  res.status(200).send('Hello API is working!');
-});
+// MIDDLEWARES
+app.use(express.json());
 
-if (process.env.NODE_ENV !== 'production') {
+app.get("/", (req, res) => {
+  res.status(200).send("Hello API is working!");
+});
+app.use("/api/auth", authRoutes);
+app.use('/api/image', imageRoutes);
+
+if (process.env.NODE_ENV !== "production") {
   app.listen(PORT, () => {
     console.log(`Server is working on http://localhost:${PORT}`);
   });
