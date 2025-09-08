@@ -8,7 +8,7 @@ const getTransformation = (folder) => {
       { quality: "auto" },
       { fetch_format: "auto" },
     ];
-  } else if (folder === "listings") {
+  } else if (folder.includes("Listings")) {
     return [
       { width: 1200, height: 1200, crop: "limit" },
       { quality: "auto:good" },
@@ -21,11 +21,8 @@ const getTransformation = (folder) => {
 
 // Genel fotoğraf upload fonksiyonu
 export const uploadImages = async (req, res) => {
-  // Fonksiyon adını güncelledim
   try {
     const { userId, folder, listingId } = req.body;
-
-    // Gelen dosyaların varlığını kontrol et
     const files = req.files;
     if (!userId || !folder) {
       return res
@@ -38,15 +35,10 @@ export const uploadImages = async (req, res) => {
         .json({ success: false, error: "No files uploaded" });
     }
 
-    // Yükleme dizisini oluştur
     const uploadedImages = [];
 
-    // Tek bir profil fotoğrafı yerine çoklu liste fotoğrafı yüklemesi için mantığı ayrıştırma
     if (folder === "profile_images") {
-      // Sadece ilk dosyayı al, çünkü profil fotoğrafı tektir
       const file = files[0];
-
-      // Eski profil fotoğrafını silme
       const userDoc = await admin
         .firestore()
         .collection("Users")
@@ -63,7 +55,6 @@ export const uploadImages = async (req, res) => {
         }
       }
 
-      // Dosyayı Cloudinary'ye yükle
       const dataUri = `data:${file.mimetype};base64,${file.buffer.toString(
         "base64"
       )}`;
@@ -73,7 +64,6 @@ export const uploadImages = async (req, res) => {
         transformation: getTransformation(folder),
       });
 
-      // Firebase'i güncelle
       await admin
         .firestore()
         .collection("Users")
@@ -90,11 +80,12 @@ export const uploadImages = async (req, res) => {
         publicId: result.public_id,
         secureUrl: result.secure_url,
       });
-    } else if (folder === "listings") {
+    } else {
+      // listings veya diğer custom folder
       if (!listingId) {
         return res.status(400).json({
           success: false,
-          error: "listingId is required for listings",
+          error: "listingId is required for this folder",
         });
       }
 
@@ -104,13 +95,12 @@ export const uploadImages = async (req, res) => {
         .doc(listingId);
       const batch = admin.firestore().batch();
 
-      // Çoklu dosyaları döngüye al
       const uploadPromises = files.map(async (file) => {
         const dataUri = `data:${file.mimetype};base64,${file.buffer.toString(
           "base64"
         )}`;
         return cloudinary.uploader.upload(dataUri, {
-          folder,
+          folder, // frontend’den gelen folder direkt kullanılıyor
           type: "private",
           transformation: getTransformation(folder),
         });
@@ -118,7 +108,6 @@ export const uploadImages = async (req, res) => {
 
       const results = await Promise.all(uploadPromises);
 
-      // Yüklenen her bir dosyanın bilgisini Firestore'a ekle
       results.forEach((result) => {
         uploadedImages.push({
           publicId: result.public_id,
@@ -133,11 +122,6 @@ export const uploadImages = async (req, res) => {
       });
 
       await batch.commit();
-    } else {
-      // Desteklenmeyen klasör türü
-      return res
-        .status(400)
-        .json({ success: false, error: "Unsupported folder type" });
     }
 
     res.json({
@@ -147,27 +131,6 @@ export const uploadImages = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, error: err.message || err });
-  }
-};
-
-export const getSignedImages = async (req, res) => {
-  try {
-    const { publicIds } = req.query;
-    const idToken = req.headers.authorization?.split("Bearer ")[1];
-    if (!idToken)
-      return res.status(401).json({ success: false, error: "Unauthorized" });
-    await admin.auth().verifyIdToken(idToken);
-    const ids = JSON.parse(publicIds);
-    const urls = ids.map((id) =>
-      cloudinary.url(id, {
-        type: "private",
-        sign_url: true,
-      })
-    );
-    res.json({ success: true, urls });
-  } catch (err) {
-    console.log(err);
     res.status(500).json({ success: false, error: err.message || err });
   }
 };

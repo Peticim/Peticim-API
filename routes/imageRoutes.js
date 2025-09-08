@@ -6,9 +6,8 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 
-import { uploadImages, getSignedImages } from "../controllers/imageController.js";
+import { uploadImages } from "../controllers/imageController.js";
 
 router.post("/upload", upload.array("files"), uploadImages);
-router.get("/", getSignedImages);
 
 export default router;

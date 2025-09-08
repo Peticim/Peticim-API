@@ -1,12 +1,14 @@
 import express from "express";
 
 // CONFIGS
-import "dotenv/config";
+import * as dotenv from "dotenv";
+dotenv.config();
+
 import "./config/firebase.js";
 
 // ROUTES
 import authRoutes from "./routes/authRoutes.js";
-import imageRoutes from './routes/imageRoutes.js';
+import imageRoutes from "./routes/imageRoutes.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,7 +20,7 @@ app.get("/", (req, res) => {
   res.status(200).send("Hello API is working!");
 });
 app.use("/api/auth", authRoutes);
-app.use('/api/image', imageRoutes);
+app.use("/api/image", imageRoutes);
 
 if (process.env.NODE_ENV !== "production") {
   app.listen(PORT, () => {
