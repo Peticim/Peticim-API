@@ -1,5 +1,5 @@
+import admin from '../config/firebase.js'
 import nodemailer from "nodemailer";
-import admin from "../config/firebase.js";
 import {
   getVerificationEmailTemplate,
   getPasswordResetEmailTemplate,
