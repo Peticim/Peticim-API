@@ -1,32 +1,10 @@
 import cloudinary from "../config/cloudinary.js";
 import admin from "../config/firebase.js";
+import FormData from "form-data";
+import axios from "axios";
 
-import tf from "@tensorflow/tfjs-node";
-import * as cocoSsd from "@tensorflow-models/coco-ssd";
-
-let model = null;
-const animalClasses = [
-  "cat",
-  "dog",
-  "bird",
-  "horse",
-  "sheep",
-  "cow",
-  "elephant",
-  "bear",
-  "zebra",
-  "giraffe",
-  "rabbit",
-  "hamster",
-  "turtle",
-  "chicken",
-  "duck",
-  "goose",
-  "pig",
-];
-const loadModel = async () => {
-  if (!model) model = await cocoSsd.load();
-};
+const MAX_FILE_SIZE = 30 * 1024 * 1024;
+const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png"];
 
 const getTransformation = (folder) => {
   if (folder === "profile_images") {
@@ -46,33 +24,55 @@ const getTransformation = (folder) => {
   }
 };
 
-// Genel fotoğraf upload fonksiyonu
+const validateFiles = (files, folder) => {
+  if (!files || files.length === 0) {
+    return "Dosya yüklenmedi.";
+  }
+
+  for (const file of files) {
+    if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+      return `Geçersiz dosya tipi: ${file.mimetype}`;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      return `Dosya çok büyük: ${file.originalname || "unknown"}`;
+    }
+  }
+
+  if (folder === "profile_images" && files.length > 1) {
+    return "Profil fotoğrafı için sadece 1 tane fotoğraf yükleyebilirsin.";
+  } else if (folder !== "profile_images" && files.length > 5) {
+    return "Her ilan için maksimum 5 fotoğraf yüklenebilir.";
+  }
+
+  return null;
+};
+
 export const uploadImages = async (req, res) => {
   try {
+    const idToken = req.headers.authorization?.replace("Bearer ", "");
+    if (!idToken) {
+      return res
+        .status(401)
+        .json({ success: false, error: "Authorization token required" });
+    }
+    await admin.auth().verifyIdToken(idToken);
+
     const { userId, folder, listingId } = req.body;
     const files = req.files;
+
     if (!userId || !folder) {
       return res
         .status(400)
         .json({ success: false, error: "userId and folder are required" });
     }
-    if (!files || files.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: "No files uploaded" });
+
+    const validationError = validateFiles(files, folder);
+    if (validationError) {
+      return res.status(400).json({ success: false, error: validationError });
     }
-    if (folder === "profile_images" && files.length > 1) {
-      return res.status(400).json({
-        success: false,
-        error: "You can upload only 1 profile image",
-      });
-    } else if (folder !== "profile_images" && files.length > 5) {
-      return res.status(400).json({
-        success: false,
-        error: "You can upload a maximum of 5 images per listing",
-      });
-    }
+
     const uploadedImages = [];
+
     if (folder === "profile_images") {
       const file = files[0];
       const userDoc = await admin
@@ -81,6 +81,7 @@ export const uploadImages = async (req, res) => {
         .doc(userId)
         .get();
       const prevProfile = userDoc.data()?.profilePicture;
+
       if (prevProfile?.publicId) {
         try {
           await cloudinary.uploader.destroy(prevProfile.publicId, {
@@ -90,6 +91,7 @@ export const uploadImages = async (req, res) => {
           console.log("Eski profil fotoğrafı silinemedi:", err);
         }
       }
+
       const dataUri = `data:${file.mimetype};base64,${file.buffer.toString(
         "base64"
       )}`;
@@ -110,47 +112,79 @@ export const uploadImages = async (req, res) => {
           },
         });
       await admin.auth().updateUser(userId, { photoURL: result.secure_url });
+
       uploadedImages.push({
         publicId: result.public_id,
         secureUrl: result.secure_url,
       });
     } else {
       if (!listingId) {
-        return res.status(400).json({
-          success: false,
-          error: "listingId is required for this folder",
-        });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error: "listingId is required for this folder",
+          });
       }
+
       const listingRef = admin
         .firestore()
         .collection("Listings")
         .doc(listingId);
-      const batch = admin.firestore().batch();
-      const uploadPromises = files.map(async (file) => {
+      const results = [];
+
+
+      for (const file of files) {
         const dataUri = `data:${file.mimetype};base64,${file.buffer.toString(
           "base64"
         )}`;
-        return cloudinary.uploader.upload(dataUri, {
-          folder,
-          type: "private",
-          transformation: getTransformation(folder),
-        });
-      });
-      const results = await Promise.all(uploadPromises);
-      results.forEach((result) => {
-        uploadedImages.push({
-          publicId: result.public_id,
-          secureUrl: result.secure_url,
-        });
-        batch.update(listingRef, {
-          images: admin.firestore.FieldValue.arrayUnion({
+        try {
+          const result = await cloudinary.uploader.upload(dataUri, {
+            folder,
+            type: "private",
+            transformation: getTransformation(folder),
+          });
+          results.push(result);
+        } catch (err) {
+          console.error("Cloudinary upload failed:", err);
+          return res
+            .status(500)
+            .json({ success: false, error: "Image upload failed" });
+        }
+      }
+
+      try {
+        const batch = admin.firestore().batch();
+        results.forEach((result) => {
+          uploadedImages.push({
             publicId: result.public_id,
-            uploadedAt: new Date(),
-          }),
+            secureUrl: result.secure_url,
+          });
+          batch.update(listingRef, {
+            images: admin.firestore.FieldValue.arrayUnion({
+              publicId: result.public_id,
+              uploadedAt: new Date(),
+            }),
+          });
         });
-      });
-      await batch.commit();
+        await batch.commit();
+      } catch (err) {
+        console.error("Firestore update failed:", err);
+        for (const result of results) {
+          try {
+            await cloudinary.uploader.destroy(result.public_id, {
+              type: "private",
+            });
+          } catch (err) {
+            console.log("Rollback failed:", err);
+          }
+        }
+        return res
+          .status(500)
+          .json({ success: false, error: "Database update failed" });
+      }
     }
+
     res.json({
       success: true,
       message: "Images uploaded successfully",
@@ -187,35 +221,60 @@ export const getImages = async (req, res) => {
   }
 };
 
-export const checkAnimal = async (req, res) => {
-  if (!req.files || req.files.length === 0)
-    return res.status(400).json({ error: "No files uploaded" });
-
+export const classifyAnimal = async (req, res) => {
   try {
-    await loadModel();
-    const results = [];
-
-    for (const file of req.files) {
-      const imageTensor = tf.node.decodeImage(file.buffer, 3);
-      const predictions = await model.detect(imageTensor);
-      imageTensor.dispose();
-
-      const isAnimal = predictions.some((p) =>
-        animalClasses.includes(p.class.toLowerCase())
-      );
-
-      results.push({
-        filename: file.originalname,
-        isAnimal,
-        predictions,
+    const files = req.files;
+    if (!files || files.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, error: "No files uploaded" });
+    }
+    const idToken = req.headers.authorization?.replace("Bearer ", "");
+    if (!idToken) {
+      return res
+        .status(401)
+        .json({ success: false, error: "Authorization token required" });
+    }
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append("files", file.buffer, {
+        filename: file.originalname || "image.jpg",
+        contentType: file.mimetype || "image/jpeg",
       });
+    });
+    const CLOUD_FUNCTION_URL = process.env.CLOUD_FUNCTION_CLASSIFY_ANIMAL;
+    if (!CLOUD_FUNCTION_URL) {
+      return res
+        .status(500)
+        .json({
+          success: false,
+          error: "CLOUD_FUNCTION_CLASSIFY_ANIMAL not configured",
+        });
+    }
+    const response = await axios.post(CLOUD_FUNCTION_URL, formData, {
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        ...formData.getHeaders(),
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      timeout: 60000,
+    });
+
+    res.status(200).json({ success: true, ...response.data });
+  } catch (error) {
+    console.error("Classification error:", error.message);
+    if (error.response) {
+      return res
+        .status(error.response.status)
+        .json({ success: false, error: error.response.data });
     }
 
-    res.status(200).json({ results });
-  } catch (error) {
-    console.error(error);
     res
       .status(500)
-      .json({ error: "Animal detection failed", details: error.message });
+      .json({
+        success: false,
+        error: error.message || "Internal server error",
+      });
   }
 };
