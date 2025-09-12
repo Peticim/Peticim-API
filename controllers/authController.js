@@ -27,7 +27,7 @@ export const sendVerificationEmail = async (req, res) => {
     const mailOptions = {
       from: {
         name: "Peticim",
-        address: "noreply@peticimapp.com",
+        address: "peticimapp@gmail.com",
       },
       to: email,
       subject: "Hesabınızı Doğrulayın",
@@ -58,7 +58,7 @@ export const sendPasswordResetEmail = async (req, res) => {
     const mailOptions = {
       from: {
         name: "Peticim",
-        address: "noreply@peticimapp.com",
+        address: "peticimapp@gmail.com",
       },
       to: email,
       subject: "Şifre Sıfırlama",
