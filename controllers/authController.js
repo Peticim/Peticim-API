@@ -1,4 +1,4 @@
-import admin from '../config/firebase.js'
+import admin from "../config/firebase.js";
 import nodemailer from "nodemailer";
 import {
   getVerificationEmailTemplate,
@@ -20,27 +20,32 @@ export const sendVerificationEmail = async (req, res) => {
       url: `https://peticimapp.com/`,
       handleCodeInApp: true,
     };
+
     const emailVerificationLink = await admin
       .auth()
       .generateEmailVerificationLink(email, actionCodeSettings);
 
     const mailOptions = {
-      from: {
-        name: "Peticim",
-        address: "peticimapp@gmail.com",
-      },
+      from: { name: "Peticim", address: "peticimapp@gmail.com" },
       to: email,
       subject: "Hesabınızı Doğrulayın",
       html: getVerificationEmailTemplate(emailVerificationLink),
     };
 
     await transporter.sendMail(mailOptions);
+
     res
       .status(200)
       .json({ success: true, message: "Confirmation e-mail sent!" });
   } catch (error) {
     console.log("SEND_VERIFICATION_EMAIL_ERROR", error);
-    res.status(500).send("An error occurred while sending confirmation email!");
+    res.status(500).json({
+      success: false,
+      code: error.code || "verification-email-failed",
+      message:
+        error.message ||
+        "An error occurred while sending confirmation email! Please try again.",
+    });
   }
 };
 
@@ -51,28 +56,31 @@ export const sendPasswordResetEmail = async (req, res) => {
       url: `https://peticimapp.com/`,
       handleCodeInApp: true,
     };
+
     const passwordResetLink = await admin
       .auth()
       .generatePasswordResetLink(email, actionCodeSettings);
 
     const mailOptions = {
-      from: {
-        name: "Peticim",
-        address: "peticimapp@gmail.com",
-      },
+      from: { name: "Peticim", address: "peticimapp@gmail.com" },
       to: email,
       subject: "Şifre Sıfırlama",
       html: getPasswordResetEmailTemplate(passwordResetLink),
     };
 
     await transporter.sendMail(mailOptions);
+
     res
       .status(200)
       .json({ success: true, message: "Password reset email sent!" });
   } catch (error) {
     console.log("SEND_PASSWORD_RESET_EMAIL_ERROR", error);
-    res
-      .status(500)
-      .send("An error occurred while sending the password reset email!");
+    res.status(500).json({
+      success: false,
+      code: error.code || "password-reset-email-failed",
+      message:
+        error.message ||
+        "An error occurred while sending the password reset email! Please try again.",
+    });
   }
 };
