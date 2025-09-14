@@ -1,10 +1,11 @@
-import { getDB } from "../config/mongodb.js";
+import City from "../models/City.js";
+import District from "../models/District.js";
+import Neighborhood from "../models/Neighborhood.js";
 import fetch from "node-fetch";
 
 export const getCities = async (req, res) => {
   try {
-    const db = await getDB();
-    const cities = await db.collection("cities").find({}).toArray();
+    const cities = await City.find({});
     res.json(cities);
   } catch (err) {
     console.error(err.message);
@@ -14,13 +15,10 @@ export const getCities = async (req, res) => {
 
 export const getDistricts = async (req, res) => {
   const { provinceId } = req.query;
-  if (!provinceId) return res.status(400).json({ error: "cityId gerekli" });
+  if (!provinceId) return res.status(400).json({ error: "provinceId gerekli" });
 
   try {
-    const db = await getDB();
-    const districts = await db.collection("districts")
-      .find({ provinceId: parseInt(provinceId) })
-      .toArray();
+    const districts = await District.find({ provinceId: parseInt(provinceId) });
     res.json(districts);
   } catch (err) {
     console.error(err.message);
@@ -33,10 +31,7 @@ export const getNeighborhoods = async (req, res) => {
   if (!districtId) return res.status(400).json({ error: "districtId gerekli" });
 
   try {
-    const db = await getDB();
-    const neighborhoods = await db.collection("neighborhoods")
-      .find({ districtId: parseInt(districtId) })
-      .toArray();
+    const neighborhoods = await Neighborhood.find({ districtId: parseInt(districtId) });
     res.json(neighborhoods);
   } catch (err) {
     console.error(err.message);
@@ -46,7 +41,9 @@ export const getNeighborhoods = async (req, res) => {
 
 export const getCoordinates = async (req, res) => {
   const { city, district, neighborhood } = req.query;
-  if (!city || !district || !neighborhood) return res.status(400).json({ error: "city, district ve neighborhood gerekli" });
+  if (!city || !district || !neighborhood) {
+    return res.status(400).json({ error: "city, district ve neighborhood gerekli" });
+  }
 
   const query = encodeURIComponent(`${neighborhood}, ${district}, ${city}, Turkey`);
   const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`;

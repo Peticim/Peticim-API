@@ -1,26 +1,18 @@
-import { MongoClient } from "mongodb";
+// config/mongodb.js
+import mongoose from "mongoose";
 
-let client;
 let db;
 
 export async function connectDB() {
-  if (db) return db;
-
   try {
-    client = new MongoClient(process.env.MONGO_URI, {
-      serverSelectionTimeoutMS: 10000, 
-    });
-
-    await client.connect();
-    db = client.db("turkey_locations");
-    console.log("MongoDB bağlantısı başarılı!");
-    return db;
-
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log("✅ MongoDB (Mongoose) bağlantısı başarılı!");
   } catch (err) {
-    console.error("MongoDB bağlantısı kurulamadı:", err.message);
+    console.error("❌ MongoDB bağlantısı kurulamadı:", err.message);
     process.exit(1);
   }
 }
+
 
 export async function getDB() {
   if (!db) {

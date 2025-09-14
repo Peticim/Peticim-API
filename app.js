@@ -6,14 +6,15 @@ dotenv.config();
 
 import "./config/firebase.js";
 
+// DB
+import { connectDB } from "./config/mongodb.js";
+await connectDB();
+
 // ROUTES
 import authRoutes from "./routes/authRoutes.js";
 import imageRoutes from "./routes/imageRoutes.js";
 import locationRoutes from "./routes/locationRoutes.js";
-
-// DB
-import { connectDB } from "./config/mongodb.js";
-await connectDB();
+import listingRoutes from './routes/listingRoutes.js'
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +28,7 @@ app.get("/", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/image", imageRoutes);
 app.use("/api/location", locationRoutes);
+app.use("/api/listing", listingRoutes);
 
 if (process.env.NODE_ENV !== "production") {
   app.listen(PORT, () => {
