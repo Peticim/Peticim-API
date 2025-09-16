@@ -5,9 +5,10 @@ const router = express.Router();
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-import { uploadImages, classifyAnimal, getImages } from "../controllers/imageController.js";
+import { uploadImages, classifyAnimal, getImages, deleteImages } from "../controllers/imageController.js";
 
 router.post("/upload", upload.array("files"), uploadImages);
+router.post("/delete", deleteImages);
 router.post("/classifyAnimal", upload.array("files"), classifyAnimal);
 router.post('/', getImages);
 

@@ -119,12 +119,10 @@ export const uploadImages = async (req, res) => {
       });
     } else {
       if (!listingId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            error: "listingId is required for this folder",
-          });
+        return res.status(400).json({
+          success: false,
+          error: "listingId is required for this folder",
+        });
       }
 
       const listingRef = admin
@@ -132,7 +130,6 @@ export const uploadImages = async (req, res) => {
         .collection("Listings")
         .doc(listingId);
       const results = [];
-
 
       for (const file of files) {
         const dataUri = `data:${file.mimetype};base64,${file.buffer.toString(
@@ -196,24 +193,56 @@ export const uploadImages = async (req, res) => {
   }
 };
 
+export const deleteImages = async (req, res) => {
+  try {
+    const idToken = req.headers.authorization?.replace("Bearer ", "");
+    if (!idToken) {
+      return res
+        .status(401)
+        .json({ success: false, error: "Authorization token required" });
+    }
+    await admin.auth().verifyIdToken(idToken);
+    const { userId, listingId } = req.body;
+    if (!userId || !listingId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "userId and listingId are required" });
+    }
+    const folderPath = `Listings/${userId}/${listingId}`;
+    await cloudinary.api.delete_resources_by_prefix(folderPath, {
+      type: "private",
+    });
+    try {
+      await cloudinary.api.delete_folder(folderPath);
+    } catch (err) {
+      console.log("Klasör silinemedi (muhtemelen zaten boş):", err.message);
+    }
+    return res.json({
+      success: true,
+      message: `All images under '${folderPath}' deleted successfully`,
+    });
+  } catch (err) {
+    console.error("deleteImages error:", err);
+    return res
+      .status(500)
+      .json({ success: false, error: err.message || "Internal Server Error" });
+  }
+};
+
 export const getImages = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ success: false, urls: {} });
-
     const token = authHeader.split(" ")[1];
     await admin.auth().verifyIdToken(token);
-
     const { publicIds } = req.body;
     if (!publicIds || !Array.isArray(publicIds)) {
       return res.status(400).json({ success: false, urls: {} });
     }
-
     const urls = {};
     publicIds.forEach((id) => {
       urls[id] = cloudinary.url(id, { type: "private", sign_url: true });
     });
-
     res.json({ success: true, urls });
   } catch (err) {
     console.error(err);
@@ -244,12 +273,10 @@ export const classifyAnimal = async (req, res) => {
     });
     const CLOUD_FUNCTION_URL = process.env.CLOUD_FUNCTION_CLASSIFY_ANIMAL;
     if (!CLOUD_FUNCTION_URL) {
-      return res
-        .status(500)
-        .json({
-          success: false,
-          error: "CLOUD_FUNCTION_CLASSIFY_ANIMAL not configured",
-        });
+      return res.status(500).json({
+        success: false,
+        error: "CLOUD_FUNCTION_CLASSIFY_ANIMAL not configured",
+      });
     }
     const response = await axios.post(CLOUD_FUNCTION_URL, formData, {
       headers: {
@@ -270,11 +297,9 @@ export const classifyAnimal = async (req, res) => {
         .json({ success: false, error: error.response.data });
     }
 
-    res
-      .status(500)
-      .json({
-        success: false,
-        error: error.message || "Internal server error",
-      });
+    res.status(500).json({
+      success: false,
+      error: error.message || "Internal server error",
+    });
   }
 };
