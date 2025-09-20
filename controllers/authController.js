@@ -24,7 +24,6 @@ export const sendVerificationEmail = async (req, res) => {
     const emailVerificationLink = await admin
       .auth()
       .generateEmailVerificationLink(email, actionCodeSettings);
-
     const mailOptions = {
       from: { name: "Peticim", address: "peticimapp@gmail.com" },
       to: email,
@@ -36,6 +35,7 @@ export const sendVerificationEmail = async (req, res) => {
       .status(200)
       .json({ success: true, message: "Confirmation e-mail sent!" });
   } catch (error) {
+    console.log("SEND_VERIFICATION_EMAIL_ERROR", error);
     const { success, message, statusCode } = handleError(error);
     res.status(statusCode).json({
       success,
@@ -67,9 +67,10 @@ export const sendPasswordResetEmail = async (req, res) => {
       .json({ success: true, message: "Password reset email sent!" });
   } catch (error) {
     console.log("SEND_PASSWORD_RESET_EMAIL_ERROR", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
+    const { success, message, statusCode } = handleError(error);
+    res.status(statusCode).json({
+      success,
+      message,
     });
   }
 };

@@ -2,33 +2,15 @@ import admin from "../config/firebase.js";
 import cloudinary from "../config/cloudinary.js";
 import FormData from "form-data";
 import axios from "axios";
+import { getTransformation } from "../utils/functions.js";
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png"];
-
-const getTransformation = (folder) => {
-  if (folder === "profile_images") {
-    return [
-      { width: 400, height: 400, crop: "limit" },
-      { quality: "auto" },
-      { fetch_format: "auto" },
-    ];
-  } else if (folder.includes("Listings")) {
-    return [
-      { width: 1200, height: 1200, crop: "limit" },
-      { quality: "auto:good" },
-      { fetch_format: "auto" },
-    ];
-  } else {
-    return [];
-  }
-};
 
 const validateFiles = (files, folder) => {
   if (!files || files.length === 0) {
     return "Dosya yüklenmedi.";
   }
-
   for (const file of files) {
     if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
       return `Geçersiz dosya tipi: ${file.mimetype}`;
@@ -37,13 +19,11 @@ const validateFiles = (files, folder) => {
       return `Dosya çok büyük: ${file.originalname || "unknown"}`;
     }
   }
-
   if (folder === "profile_images" && files.length > 1) {
     return "Profil fotoğrafı için sadece 1 tane fotoğraf yükleyebilirsin.";
   } else if (folder !== "profile_images" && files.length > 5) {
     return "Her ilan için maksimum 5 fotoğraf yüklenebilir.";
   }
-
   return null;
 };
 
@@ -215,7 +195,7 @@ export const deleteImages = async (req, res) => {
     try {
       await cloudinary.api.delete_folder(folderPath);
     } catch (err) {
-      console.log("Klasör silinemedi (muhtemelen zaten boş):", err.message);
+      console.log("Folder cannot be deleted:", err.message);
     }
     return res.json({
       success: true,

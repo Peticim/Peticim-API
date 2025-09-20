@@ -24,8 +24,7 @@ export const handleError = (error) => {
     responseMessage = message;
     statusCode = firebaseStatusCode;
   } else {
-    responseMessage =
-      "Profil bilgileri alınırken bir hata oluştu. Lütfen tekrar deneyin.";
+    responseMessage = "Bilinmeyen bir hata oluştu, lütfen tekrar deneyiniz.";
     statusCode = 500;
   }
   return {
