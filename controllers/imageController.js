@@ -35,17 +35,17 @@ export const uploadImages = async (req, res) => {
         .status(401)
         .json({ success: false, error: "Authorization token required" });
     }
+
     await admin.auth().verifyIdToken(idToken);
 
     const { userId, folder, listingId } = req.body;
-    const files = req.files;
-
     if (!userId || !folder) {
       return res
         .status(400)
         .json({ success: false, error: "userId and folder are required" });
     }
-
+    
+    const files = req.files;
     const validationError = validateFiles(files, folder);
     if (validationError) {
       return res.status(400).json({ success: false, error: validationError });
@@ -53,6 +53,7 @@ export const uploadImages = async (req, res) => {
 
     const uploadedImages = [];
 
+    // --- Profil fotoğrafı ---
     if (folder === "profile_images") {
       const file = files[0];
       const userDoc = await admin
@@ -60,13 +61,11 @@ export const uploadImages = async (req, res) => {
         .collection("Users")
         .doc(userId)
         .get();
-      const prevProfile = userDoc.data()?.profilePicture;
 
+      const prevProfile = userDoc.data()?.profilePicture;
       if (prevProfile?.publicId) {
         try {
-          await cloudinary.uploader.destroy(prevProfile.publicId, {
-            type: "private",
-          });
+          await cloudinary.uploader.destroy(prevProfile.publicId);
         } catch (err) {
           console.log("Eski profil fotoğrafı silinemedi:", err);
         }
@@ -75,9 +74,9 @@ export const uploadImages = async (req, res) => {
       const dataUri = `data:${file.mimetype};base64,${file.buffer.toString(
         "base64"
       )}`;
+      const cloudinaryFolder = `${folder}/${userId}`; // path burada tek sefer oluşturuldu
       const result = await cloudinary.uploader.upload(dataUri, {
-        folder,
-        type: "private",
+        folder: cloudinaryFolder,
         transformation: getTransformation(folder),
       });
 
@@ -87,17 +86,20 @@ export const uploadImages = async (req, res) => {
         .doc(userId)
         .update({
           profilePicture: {
+            url: result.secure_url,
             publicId: result.public_id,
             uploadedAt: new Date(),
           },
         });
+
       await admin.auth().updateUser(userId, { photoURL: result.secure_url });
 
       uploadedImages.push({
+        url: result.secure_url,
         publicId: result.public_id,
-        secureUrl: result.secure_url,
       });
     } else {
+      // --- İlan fotoğrafları ---
       if (!listingId) {
         return res.status(400).json({
           success: false,
@@ -105,10 +107,7 @@ export const uploadImages = async (req, res) => {
         });
       }
 
-      const listingRef = admin
-        .firestore()
-        .collection("Listings")
-        .doc(listingId);
+      const listingRef = admin.firestore().collection("Listings").doc(listingId);
       const results = [];
 
       for (const file of files) {
@@ -118,7 +117,6 @@ export const uploadImages = async (req, res) => {
         try {
           const result = await cloudinary.uploader.upload(dataUri, {
             folder,
-            type: "private",
             transformation: getTransformation(folder),
           });
           results.push(result);
@@ -134,11 +132,12 @@ export const uploadImages = async (req, res) => {
         const batch = admin.firestore().batch();
         results.forEach((result) => {
           uploadedImages.push({
+            url: result.secure_url,
             publicId: result.public_id,
-            secureUrl: result.secure_url,
           });
           batch.update(listingRef, {
             images: admin.firestore.FieldValue.arrayUnion({
+              url: result.secure_url,
               publicId: result.public_id,
               uploadedAt: new Date(),
             }),
@@ -147,11 +146,10 @@ export const uploadImages = async (req, res) => {
         await batch.commit();
       } catch (err) {
         console.error("Firestore update failed:", err);
+        // Rollback: Cloudinary'de yüklenenleri sil
         for (const result of results) {
           try {
-            await cloudinary.uploader.destroy(result.public_id, {
-              type: "private",
-            });
+            await cloudinary.uploader.destroy(result.public_id);
           } catch (err) {
             console.log("Rollback failed:", err);
           }
@@ -181,6 +179,7 @@ export const deleteImages = async (req, res) => {
         .status(401)
         .json({ success: false, error: "Authorization token required" });
     }
+
     await admin.auth().verifyIdToken(idToken);
     const { userId, listingId } = req.body;
     if (!userId || !listingId) {
@@ -188,18 +187,29 @@ export const deleteImages = async (req, res) => {
         .status(400)
         .json({ success: false, error: "userId and listingId are required" });
     }
-    const folderPath = `Listings/${userId}/${listingId}`;
-    await cloudinary.api.delete_resources_by_prefix(folderPath, {
-      type: "private",
-    });
-    try {
-      await cloudinary.api.delete_folder(folderPath);
-    } catch (err) {
-      console.log("Folder cannot be deleted:", err.message);
+
+    const listingRef = admin.firestore().collection("Listings").doc(listingId);
+    const listingDoc = await listingRef.get();
+
+    if (!listingDoc.exists) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Listing not found" });
     }
+
+    const cloudinaryFolderPrefix = `Listings/${userId}/${listingId}`;
+    try {
+      await cloudinary.api.delete_resources_by_prefix(cloudinaryFolderPrefix);
+      await cloudinary.api.delete_folder(cloudinaryFolderPrefix)
+    } catch (err) {
+      console.log("Cloudinary folder deletion failed:", err.message);
+    }
+
+    await listingRef.update({ images: [] });
+
     return res.json({
       success: true,
-      message: `All images under '${folderPath}' deleted successfully`,
+      message: `All images and folder for listing '${listingId}' deleted successfully`,
     });
   } catch (err) {
     console.error("deleteImages error:", err);
