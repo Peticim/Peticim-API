@@ -29,25 +29,39 @@ const validateFiles = (files, folder) => {
 
 export const uploadImages = async (req, res) => {
   try {
+    console.log("=== UPLOAD REQUEST START ===");
+    console.log("Headers:", req.headers);
+    console.log("Body:", req.body);
+    console.log("Files:", req.files?.map(f => ({
+      originalname: f.originalname,
+      mimetype: f.mimetype,
+      size: f.size,
+    })));
+
     const idToken = req.headers.authorization?.replace("Bearer ", "");
     if (!idToken) {
+      console.warn("Missing Authorization header");
       return res
         .status(401)
         .json({ success: false, error: "Authorization token required" });
     }
 
+    console.log("Verifying token...");
     await admin.auth().verifyIdToken(idToken);
+    console.log("Token verified ✅");
 
     const { userId, folder, listingId } = req.body;
     if (!userId || !folder) {
+      console.warn("Missing userId or folder in body", { userId, folder });
       return res
         .status(400)
         .json({ success: false, error: "userId and folder are required" });
     }
-    
+
     const files = req.files;
     const validationError = validateFiles(files, folder);
     if (validationError) {
+      console.warn("File validation failed:", validationError);
       return res.status(400).json({ success: false, error: validationError });
     }
 
@@ -55,44 +69,48 @@ export const uploadImages = async (req, res) => {
 
     // --- Profil fotoğrafı ---
     if (folder === "profile_images") {
+      console.log("Uploading profile image...");
       const file = files[0];
-      const userDoc = await admin
-        .firestore()
-        .collection("Users")
-        .doc(userId)
-        .get();
+      console.log("Profile file:", {
+        name: file.originalname,
+        type: file.mimetype,
+        size: file.size,
+      });
+
+      const userDoc = await admin.firestore().collection("Users").doc(userId).get();
+      console.log("Fetched user doc:", userDoc.exists);
 
       const prevProfile = userDoc.data()?.profilePicture;
       if (prevProfile?.publicId) {
+        console.log("Deleting old profile picture:", prevProfile.publicId);
         try {
           await cloudinary.uploader.destroy(prevProfile.publicId);
         } catch (err) {
-          console.log("Eski profil fotoğrafı silinemedi:", err);
+          console.error("Old profile delete failed:", err);
         }
       }
 
-      const dataUri = `data:${file.mimetype};base64,${file.buffer.toString(
-        "base64"
-      )}`;
-      const cloudinaryFolder = `${folder}/${userId}`; // path burada tek sefer oluşturuldu
+      const dataUri = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
+      const cloudinaryFolder = `${folder}/${userId}`;
+      console.log("Uploading to Cloudinary folder:", cloudinaryFolder);
+
       const result = await cloudinary.uploader.upload(dataUri, {
         folder: cloudinaryFolder,
         transformation: getTransformation(folder),
       });
+      console.log("Cloudinary upload success:", result.secure_url);
 
-      await admin
-        .firestore()
-        .collection("Users")
-        .doc(userId)
-        .update({
-          profilePicture: {
-            url: result.secure_url,
-            publicId: result.public_id,
-            uploadedAt: new Date(),
-          },
-        });
+      await admin.firestore().collection("Users").doc(userId).update({
+        profilePicture: {
+          url: result.secure_url,
+          publicId: result.public_id,
+          uploadedAt: new Date(),
+        },
+      });
+      console.log("Firestore profilePicture updated");
 
       await admin.auth().updateUser(userId, { photoURL: result.secure_url });
+      console.log("Firebase Auth photoURL updated");
 
       uploadedImages.push({
         url: result.secure_url,
@@ -101,34 +119,40 @@ export const uploadImages = async (req, res) => {
     } else {
       // --- İlan fotoğrafları ---
       if (!listingId) {
+        console.warn("Missing listingId for listing images upload");
         return res.status(400).json({
           success: false,
           error: "listingId is required for this folder",
         });
       }
 
+      console.log("Uploading listing images... ListingId:", listingId);
       const listingRef = admin.firestore().collection("Listings").doc(listingId);
       const results = [];
 
       for (const file of files) {
-        const dataUri = `data:${file.mimetype};base64,${file.buffer.toString(
-          "base64"
-        )}`;
+        console.log("Uploading file:", {
+          name: file.originalname,
+          type: file.mimetype,
+          size: file.size,
+        });
+
+        const dataUri = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
         try {
           const result = await cloudinary.uploader.upload(dataUri, {
             folder,
             transformation: getTransformation(folder),
           });
+          console.log("Uploaded to Cloudinary:", result.secure_url);
           results.push(result);
         } catch (err) {
           console.error("Cloudinary upload failed:", err);
-          return res
-            .status(500)
-            .json({ success: false, error: "Image upload failed" });
+          return res.status(500).json({ success: false, error: "Image upload failed" });
         }
       }
 
       try {
+        console.log("Updating Firestore with uploaded images...");
         const batch = admin.firestore().batch();
         results.forEach((result) => {
           uploadedImages.push({
@@ -144,32 +168,33 @@ export const uploadImages = async (req, res) => {
           });
         });
         await batch.commit();
+        console.log("Firestore batch update committed ✅");
       } catch (err) {
         console.error("Firestore update failed:", err);
-        // Rollback: Cloudinary'de yüklenenleri sil
         for (const result of results) {
           try {
             await cloudinary.uploader.destroy(result.public_id);
+            console.log("Rollback deleted:", result.public_id);
           } catch (err) {
-            console.log("Rollback failed:", err);
+            console.error("Rollback failed:", err);
           }
         }
-        return res
-          .status(500)
-          .json({ success: false, error: "Database update failed" });
+        return res.status(500).json({ success: false, error: "Database update failed" });
       }
     }
 
+    console.log("=== UPLOAD REQUEST SUCCESS ===");
     res.json({
       success: true,
       message: "Images uploaded successfully",
       uploadedImages,
     });
   } catch (err) {
-    console.error(err);
+    console.error("=== UPLOAD REQUEST ERROR ===", err);
     res.status(500).json({ success: false, error: err.message || err });
   }
 };
+
 
 export const deleteImages = async (req, res) => {
   try {
