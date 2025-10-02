@@ -50,7 +50,7 @@ export const getCoordinates = async (req, res) => {
 
   try {
     const response = await fetch(url, {
-      headers: { "User-Agent": "pet-adoption-app (youremail@example.com)" }
+      headers: { "User-Agent": "PeticimApp (info@peticimapp.com)" }
     });
     const data = await response.json();
     if (!data[0]) return res.status(404).json({ error: "Konum bulunamadı" });
